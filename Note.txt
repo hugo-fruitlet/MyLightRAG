@@ -1,0 +1,132 @@
+################ 临时环境设置：
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+& "C:\d\Program Files\workspace\.venv\Scripts\Activate.ps1"
+
+
+
+################ 没管理员权限安装 bun ：
+# PowerShell - 在普通用户会话下解压本地 bun zip 并把可执行目录加入用户 PATH
+# 将 $zipPath 改为你的本地 zip 路径（你已给出）
+$zipPath = "C:\d\download\bun-windows-x64.zip"
+
+# 目标安装目录（用户目录下，无需管理员）
+$dest = "$env:USERPROFILE\bin\bun"
+
+# 临时解压目录
+$extractTemp = Join-Path $env:TEMP ("bun_extract_{0}" -f (Get-Random))
+
+# 解压到临时目录
+New-Item -ItemType Directory -Force -Path $extractTemp | Out-Null
+Expand-Archive -Path $zipPath -DestinationPath $extractTemp -Force
+
+# 查找解压出的包含 bun.exe 的子目录（通常是 bun-windows-x64）
+$foundDir = Get-ChildItem -Path $extractTemp -Directory | Where-Object {
+    Test-Path (Join-Path $_.FullName "bun.exe")
+} | Select-Object -First 1
+
+if (-not $foundDir) {
+    # 兜底：搜索任意位置的 bun.exe
+    $foundFile = Get-ChildItem -Path $extractTemp -Filter "bun.exe" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($foundFile) {
+        $foundDir = $foundFile.Directory
+    } else {
+        Write-Error "未能在压缩包中找到 bun.exe，请确认压缩包内容。"
+        Remove-Item -Recurse -Force $extractTemp
+        return
+    }
+}
+
+# 创建目标目录并复制文件
+New-Item -ItemType Directory -Force -Path $dest | Out-Null
+Copy-Item -Path (Join-Path $foundDir.FullName "*") -Destination $dest -Recurse -Force
+
+# 将目标目录加入当前用户 PATH（如果尚未包含）
+$cur = [Environment]::GetEnvironmentVariable("Path","User")
+if ($cur -notlike "*$dest*") {
+    $new = if ($cur) { "$cur;$dest" } else { $dest }
+    setx PATH $new | Out-Null
+}
+
+# 使当前会话立即生效（可选）
+$env:Path = "$env:Path;$dest"
+
+# 清理临时目录
+Remove-Item -Recurse -Force $extractTemp
+
+# 验证 bun 可用（使用完整路径以避免 PATH 问题）
+& (Join-Path $dest "bun.exe") -v
+
+# 验证 bun 可用
+bun -v
+
+
+
+
+# 只对当前 PowerShell 会话生效
+$env:NPM_CONFIG_REGISTRY = "https://registry.npmmirror.com/"
+$env:NODE_EXTRA_CA_CERTS = "C:\d\Program Files\workspace\LightRAG\lightrag_webui\_.npmmirror.crt"
+# 再试一次（带 --registry 以防）
+npm install -g bun --registry https://registry.npmmirror.com/
+
+npm install --package-lock-only
+npm ci
+
+npm run build --emptyOutDir
+
+
+################# 打开前端服务
+npx vite --host 0.0.0.0 --port 5173
+
+################# 打开后端服务
+lightrag-server --host 127.0.0.1 --port 9621 --log-level DEBUG
+python -c "from lightrag.api.lightrag_server import get_application; from uvicorn import Config, Server; app=get_application(); cfg=Config(app=app, host='127.0.0.1', port=9621, reload=True); Server(cfg).run()"
+
+
+
+
+################### github #################
+# 进入项目目录
+cd c:\d\Program Files\workspace\LightRAG
+
+# 初始化 git 仓库
+git init
+
+# 添加所有文件到暂存区
+git add .
+git add Note.txt
+git commit --amend --no-edit
+
+
+# 提交文件
+git commit -m "Initial commit"
+
+# 添加远程仓库地址（替换为你的 GitHub 仓库 URL）
+git remote remove origin
+git remote add origin https://github.com/hugo-fruitlet/LightRAG.git
+
+# 推送到 GitHub
+git branch -M main
+git push -u origin main
+
+# 增加 Git 的缓冲区大小
+git config http.postBuffer 524288000
+
+# 启用增量推送
+git config --global push.incremental 1
+
+# 或者使用更小的包大小
+git config http.postBuffer 104857600
+
+# 强制推送本地更改到远程仓库（谨慎使用）
+git remote set-url origin https://github.com/hugo-fruitlet/LightRAG.git
+git push -u origin main --force
+
+# 添加更改
+git add .
+
+# 提交更改
+git commit -m "Describe your changes here"
+
+# 推送到 GitHub
+git push
+################### github #################
